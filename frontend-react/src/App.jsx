@@ -14,7 +14,7 @@ import ThreatMonitor from './pages/ThreatMonitor';
 import TrafficAnalytics from './pages/TrafficAnalytics';
 import { generateInitialData, updateLiveTelemetry } from './services/mockData';
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000/api/security";
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 export default function App() {
   const { user, loading } = useAuth();
