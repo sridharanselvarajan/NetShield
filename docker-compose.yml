@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: netshield-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+    volumes:
+      - ./backend/netshield.db:/app/netshield.db
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend-react
+      dockerfile: Dockerfile
+    container_name: netshield-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always

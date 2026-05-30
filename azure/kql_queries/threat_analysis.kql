@@ -1,0 +1,31 @@
+// NetShield AI — Azure KQL (Kusto Query Language) Queries
+// Copy and paste these queries into the "Logs" query editor in your Azure Log Analytics Workspace
+// to search, analyze, and visualize your uploaded cloud security logs.
+
+// ─── Query 1: Active Threat Logs ─────────────────────────────────
+// Displays all simulated security alerts and attack patterns sorted by time.
+NetShieldTrafficLogs_CL
+| where flow_type_s != "normal"
+| project TimeGenerated, source_ip_s, dest_ip_s, dest_port_d, flow_type_s, action_s, bytes_sent_d
+| order by TimeGenerated desc
+
+// ─── Query 2: Blocked Attacks by Country (Pie Chart) ──────────────
+// Aggregates blocked malicious attempts by geographic origin and renders a pie chart.
+NetShieldTrafficLogs_CL
+| where action_s == "DENY"
+| summarize AttackCount = count() by country_s
+| order by AttackCount desc
+| render piechart
+
+// ─── Query 3: High Risk IP Watchlist ─────────────────────────────
+// Finds the top suspicious source IPs targeting your network, sorted by frequency.
+NetShieldTrafficLogs_CL
+| where flow_type_s in ("brute_force", "port_scan", "ddos")
+| summarize ThreatOccurrences = count(), DistinctPortsTargeted = dcount(dest_port_d) by source_ip_s, country_s
+| order by ThreatOccurrences desc
+
+// ─── Query 4: Daily Traffic Volume Ingested ──────────────────────
+// Plots allowed vs blocked packet streams over time to monitor server loads.
+NetShieldTrafficLogs_CL
+| summarize TotalPackets = sum(packets_d) by bin(TimeGenerated, 1h), action_s
+| render timechart
