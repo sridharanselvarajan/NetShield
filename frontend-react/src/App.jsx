@@ -14,7 +14,12 @@ import ThreatMonitor from './pages/ThreatMonitor';
 import TrafficAnalytics from './pages/TrafficAnalytics';
 import { generateInitialData, updateLiveTelemetry } from './services/mockData';
 
-const API_BASE = import.meta.env.VITE_API_BASE;
+let API_BASE_RAW = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000/api/security";
+// Dynamically clean any trailing slash to prevent double-slash (//) 404 routing errors!
+if (API_BASE_RAW.endsWith("/")) {
+  API_BASE_RAW = API_BASE_RAW.slice(0, -1);
+}
+const API_BASE = API_BASE_RAW;
 
 export default function App() {
   const { user, loading } = useAuth();
