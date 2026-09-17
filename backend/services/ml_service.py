@@ -13,6 +13,7 @@ import numpy as np
 from datetime import datetime
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
 from sqlalchemy.orm import Session
 
 from models.database import SessionLocal, TrafficLog, Alert, Anomaly
@@ -21,7 +22,12 @@ from models.database import SessionLocal, TrafficLog, Alert, Anomaly
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml_models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 MODEL_PATH = os.path.join(MODEL_DIR, "isolation_forest.pkl")
+XGB_MODEL_PATH = os.path.join(MODEL_DIR, "xgboost_model.pkl")
 SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
+
+# Hybrid Fusion Weights (w1 + w2 = 1.0)
+WEIGHT_IF = 0.4
+WEIGHT_XG = 0.6
 
 # Helper: Map destination ports to danger/frequency index
 COMMON_PORTS = {80: 1, 443: 1, 22: 4, 21: 3, 23: 5, 3389: 4, 445: 5}
@@ -115,27 +121,44 @@ def train_ml_model():
     model = IsolationForest(n_estimators=150, contamination=0.15, random_state=42)
     model.fit(X_scaled)
     
-    # Save the model & scaler
+    # Fit XGBoost Classifier for Supervised Threat Classification
+    print("[>>] Training XGBoost classifier...")
+    label_map = {"normal": 0, "brute_force": 1, "port_scan": 2, "ddos": 3}
+    y = df['flow_type'].map(label_map).fillna(0).astype(int)
+    
+    xgb = XGBClassifier(
+        n_estimators=100,
+        max_depth=4,
+        learning_rate=0.1,
+        random_state=42,
+        eval_metric='mlogloss'
+    )
+    xgb.fit(X_scaled, y)
+    
+    # Save models & scaler
     joblib.dump(model, MODEL_PATH)
+    joblib.dump(xgb, XGB_MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
-    print(f"[OK] Model successfully saved to {MODEL_PATH}")
+    print(f"[OK] Isolation Forest model successfully saved to {MODEL_PATH}")
+    print(f"[OK] XGBoost model successfully saved to {XGB_MODEL_PATH}")
     print(f"[OK] Scaler successfully saved to {SCALER_PATH}")
     
-    return model, scaler, df, X_scaled
+    return model, xgb, scaler, df, X_scaled
 
 def evaluate_and_populate_db():
     """
-    Applies the trained Isolation Forest to score each log in the SQLite database,
+    Applies the trained Isolation Forest and XGBoost models to score each log in the SQLite database,
     saves structured anomalies, and triggers appropriate security alerts.
     """
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(XGB_MODEL_PATH) or not os.path.exists(SCALER_PATH):
         print("[ERR] Model files not found! Training first...")
         result = train_ml_model()
         if not result: return
-        model, scaler, df, X_scaled = result
+        model, xgb, scaler, df, X_scaled = result
     else:
         print("[>>] Loading pre-trained ML models...")
         model = joblib.load(MODEL_PATH)
+        xgb = joblib.load(XGB_MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)
         
     db: Session = SessionLocal()
@@ -217,25 +240,34 @@ def evaluate_and_populate_db():
         X_features = preprocess_logs(df_db)
         X_scaled = scaler.transform(X_features)
         
-        # Predict: returns -1 for anomaly, 1 for normal
-        predictions = model.predict(X_scaled)
-        
-        # Get raw decision function scores (lower = more anomalous)
-        # Shift the raw score so lower scores indicate higher risk.
+        # Unsupervised Isolation Forest prediction and scoring
+        if_predictions = model.predict(X_scaled)
         raw_scores = model.decision_function(X_scaled)
         
-        # Calculate custom risk score: map raw scores to a 0-100 scale
-        # decision_function typically yields values in range [-0.5, 0.5]
-        # We want to map lower decision values to HIGHER risk scores.
+        # Normalize Isolation Forest decision function to [0, 1]
         min_raw, max_raw = -0.4, 0.2
-        risk_scores = []
-        for score in raw_scores:
-            # Normalize to 0.0 - 1.0 range
-            norm = (score - min_raw) / (max_raw - min_raw)
-            norm = clip(1.0 - norm, 0.0, 1.0) # invert: low decision score = high anomaly risk
-            risk_scores.append(round(norm * 100, 1))
+        norm = (raw_scores - min_raw) / (max_raw - min_raw)
+        s_if = np.clip(1.0 - norm, 0.0, 1.0)
+        
+        # Supervised XGBoost prediction and scoring
+        P_XG = xgb.predict_proba(X_scaled)
+        classes = list(xgb.classes_)
+        threat_cols = [i for i, c in enumerate(classes) if c in [1, 2, 3]]
+        
+        if threat_cols:
+            p_threat = np.max(P_XG[:, threat_cols], axis=1)
+        else:
+            p_threat = np.zeros(P_XG.shape[0])
             
-        # Update database with ML scores & create alerts for anomalies
+        xgb_predictions = xgb.predict(X_scaled)
+        id_to_class = {0: "normal", 1: "brute_force", 2: "port_scan", 3: "ddos"}
+        
+        # Consolidated Hybrid Threat Score
+        # Score_hybrid = w1 * s_if + w2 * p_threat
+        hybrid_scores = WEIGHT_IF * s_if + WEIGHT_XG * p_threat
+        risk_scores = np.round(hybrid_scores * 100, 1)
+            
+        # Update database with hybrid ML scores & create alerts for anomalies
         print("[>>] Writing scores and registering threat alerts in SQLite database...")
         anomaly_count = 0
         alert_count = 0
@@ -244,10 +276,26 @@ def evaluate_and_populate_db():
         db.query(Alert).delete()
         db.query(Anomaly).delete()
         
+        from services.threat_intel_service import get_ip_reputation
+        
         for i, log in enumerate(db_logs):
-            is_anomaly = predictions[i] == -1
-            risk = risk_scores[i]
+            # Fetch Threat Intelligence Reputation Score (S_TI)
+            ti_data = get_ip_reputation(log.source_ip, db)
+            s_ti = ti_data["reputation_rating"]
             
+            # Combine scores: Risk Score = 0.7 * Score_hybrid + 0.3 * S_TI
+            hybrid_score = risk_scores[i]
+            risk = round(0.7 * hybrid_score + 0.3 * s_ti, 1)
+            
+            # Flag anomaly if flagged by Isolation Forest, XGBoost predicts a threat class, or risk score >= 50
+            is_anomaly = (if_predictions[i] == -1) or (xgb_predictions[i] in [1, 2, 3]) or (risk >= 50)
+            
+            # If the simulator explicitly labeled it as malicious, force higher risk score
+            if log.flow_type in ["brute_force", "port_scan", "ddos"]:
+                if risk < 50:
+                    risk = round(random_score_for_threat(log.flow_type), 1)
+                is_anomaly = True
+                
             # Map risk to a threat level classification
             if risk >= 85:
                 threat = "CRITICAL"
@@ -257,13 +305,6 @@ def evaluate_and_populate_db():
                 threat = "MEDIUM"
             else:
                 threat = "LOW"
-                
-            # If the simulator explicitly labeled it as malicious, force higher risk score
-            if log.flow_type in ["brute_force", "port_scan", "ddos"]:
-                if risk < 50:
-                    risk = round(random_score_for_threat(log.flow_type), 1)
-                    threat = "HIGH" if risk < 85 else "CRITICAL"
-                is_anomaly = True
                 
             # Update log
             log.is_anomaly = is_anomaly
@@ -279,7 +320,7 @@ def evaluate_and_populate_db():
                     source_ip=log.source_ip,
                     anomaly_score=float(raw_scores[i]),
                     risk_score=risk,
-                    model_used="IsolationForest (Scikit-Learn)",
+                    model_used="Hybrid (IsolationForest + XGBoost)",
                     features_json=json.dumps(features_dict),
                     timestamp=log.timestamp
                 )
@@ -289,10 +330,14 @@ def evaluate_and_populate_db():
                 # Group by source IP and alert type to keep alerts clean
                 if threat in ["HIGH", "CRITICAL"]:
                     alert_count += 1
-                    msg = f"NetShield ML Engine detected {log.flow_type.upper()} behavior from IP {log.source_ip} to Port {log.dest_port} ({log.protocol}). Risk Score: {risk}."
+                    # Use predicted threat type from XGBoost if the simulator flow type is normal
+                    predicted_threat = id_to_class.get(xgb_predictions[i], "anomaly")
+                    threat_label = log.flow_type if log.flow_type != "normal" else predicted_threat
+                    
+                    msg = f"NetShield ML Hybrid Engine detected {threat_label.upper()} behavior from IP {log.source_ip} to Port {log.dest_port} ({log.protocol}). Risk Score: {risk}."
                     alert_entry = Alert(
                         source_ip=log.source_ip,
-                        alert_type=log.flow_type if log.flow_type != "normal" else "anomaly",
+                        alert_type=threat_label,
                         severity=threat,
                         message=msg,
                         is_resolved=False,

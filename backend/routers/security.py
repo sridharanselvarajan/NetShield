@@ -331,15 +331,18 @@ SIMULATOR_ACTIVE = True
 
 # Load ML Model & Scaler on Startup
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "services", "ml_models", "isolation_forest.pkl")
+XGB_MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "services", "ml_models", "xgboost_model.pkl")
 SCALER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "services", "ml_models", "scaler.pkl")
 
 ml_model = None
+ml_xgb = None
 ml_scaler = None
-if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
+if os.path.exists(MODEL_PATH) and os.path.exists(XGB_MODEL_PATH) and os.path.exists(SCALER_PATH):
     try:
         ml_model = joblib.load(MODEL_PATH)
+        ml_xgb = joblib.load(XGB_MODEL_PATH)
         ml_scaler = joblib.load(SCALER_PATH)
-        print("[OK] Live threat stream successfully loaded Isolation Forest model.")
+        print("[OK] Live threat stream successfully loaded Hybrid Threat Detection Models.")
     except Exception as e:
         print(f"[WARN] Error loading ML models for live stream: {e}")
 
@@ -403,7 +406,10 @@ def generate_single_simulated_log(db: Session = None) -> dict:
     # Preprocessing features helper
     COMMON_PORTS = {80: 1, 443: 1, 22: 4, 21: 3, 23: 5, 3389: 4, 445: 5}
     
-    if ml_model and ml_scaler:
+    WEIGHT_IF = 0.4
+    WEIGHT_XG = 0.6
+
+    if ml_model and ml_xgb and ml_scaler:
         try:
             # Create features DataFrame
             port_danger = COMMON_PORTS.get(dest_port, 2)
@@ -431,13 +437,41 @@ def generate_single_simulated_log(db: Session = None) -> dict:
 
             # Scale and Predict
             scaled_features = ml_scaler.transform(features_df)
-            pred = ml_model.predict(scaled_features)[0]
+            
+            # Isolation Forest prediction
+            if_pred = ml_model.predict(scaled_features)[0]
             decision = ml_model.decision_function(scaled_features)[0]
-
-            is_anomaly = pred == -1
-            # Map decision to risk score 0-100
             norm = (decision - (-0.4)) / (0.2 - (-0.4))
-            risk_score = round(max(0.0, min(1.0, 1.0 - norm)) * 100, 1)
+            s_if = max(0.0, min(1.0, 1.0 - norm))
+            
+            # XGBoost prediction
+            xgb_probs = ml_xgb.predict_proba(scaled_features)[0]
+            classes = list(ml_xgb.classes_)
+            threat_cols = [idx for idx, val in enumerate(classes) if val in [1, 2, 3]]
+            
+            if threat_cols:
+                p_threat = max(xgb_probs[threat_cols])
+            else:
+                p_threat = 0.0
+                
+            xgb_pred = ml_xgb.predict(scaled_features)[0]
+            
+            # Query Threat Intelligence Reputation Score (S_TI)
+            from services.threat_intel_service import get_ip_reputation, get_simulated_reputation
+            if db:
+                ti_data = get_ip_reputation(src, db)
+            else:
+                ti_data = get_simulated_reputation(src)
+            s_ti = ti_data["reputation_rating"]
+
+            # Consolidated Hybrid Threat Score
+            hybrid_score = WEIGHT_IF * s_if + WEIGHT_XG * p_threat
+            raw_hybrid_score = hybrid_score * 100
+            
+            # Combine scores: Risk Score = 0.7 * ML_Score + 0.3 * S_TI
+            risk_score = round(0.7 * raw_hybrid_score + 0.3 * s_ti, 1)
+
+            is_anomaly = (if_pred == -1) or (xgb_pred in [1, 2, 3]) or (risk_score >= 50)
 
             # Override for malicious types
             if flow_type in ["brute_force", "port_scan", "ddos"]:
@@ -446,12 +480,20 @@ def generate_single_simulated_log(db: Session = None) -> dict:
                     risk_score = round(random.uniform(70, 99.9), 1)
         except Exception:
             # Fallback on preprocessing error
+            from services.threat_intel_service import get_simulated_reputation
+            ti_data = get_simulated_reputation(src)
+            s_ti = ti_data["reputation_rating"]
             is_anomaly = flow_type != "normal"
-            risk_score = round(random.uniform(70, 99), 1) if is_anomaly else round(random.uniform(5, 35), 1)
+            raw_risk = round(random.uniform(70, 99), 1) if is_anomaly else round(random.uniform(5, 35), 1)
+            risk_score = round(0.7 * raw_risk + 0.3 * s_ti, 1)
     else:
         # Fallback if ML models not loaded
+        from services.threat_intel_service import get_simulated_reputation
+        ti_data = get_simulated_reputation(src)
+        s_ti = ti_data["reputation_rating"]
         is_anomaly = flow_type != "normal"
-        risk_score = round(random.uniform(70, 99), 1) if is_anomaly else round(random.uniform(5, 35), 1)
+        raw_risk = round(random.uniform(70, 99), 1) if is_anomaly else round(random.uniform(5, 35), 1)
+        risk_score = round(0.7 * raw_risk + 0.3 * s_ti, 1)
 
     if risk_score >= 85:
         threat_level = "CRITICAL"
@@ -548,7 +590,7 @@ async def live_traffic_stream_loop():
                         source_ip=new_log.source_ip,
                         anomaly_score=float(-0.1 if log_data["is_anomaly"] else 0.1),
                         risk_score=log_data["risk_score"],
-                        model_used="IsolationForest (Scikit-Learn)",
+                        model_used="Hybrid (IsolationForest + XGBoost)",
                         features_json="{}",
                         timestamp=datetime.utcnow()
                     )
@@ -556,7 +598,7 @@ async def live_traffic_stream_loop():
 
                     # Trigger alert
                     if log_data["threat_level"] in ["HIGH", "CRITICAL"]:
-                        msg = f"NetShield ML Engine detected {log_data['flow_type'].upper()} behavior from IP {log_data['source_ip']} to Port {log_data['dest_port']} ({log_data['protocol']}). Risk Score: {log_data['risk_score']}."
+                        msg = f"NetShield ML Hybrid Engine detected {log_data['flow_type'].upper()} behavior from IP {log_data['source_ip']} to Port {log_data['dest_port']} ({log_data['protocol']}). Risk Score: {log_data['risk_score']}."
                         new_alert = Alert(
                             source_ip=new_log.source_ip,
                             alert_type=new_log.flow_type if new_log.flow_type != "normal" else "anomaly",

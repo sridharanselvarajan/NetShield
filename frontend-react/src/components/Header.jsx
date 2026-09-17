@@ -39,10 +39,15 @@ export default function Header({
           title: 'Incident Action Alerts',
           subtitle: 'SOC alerts requiring manual review or active threat isolation'
         };
+      case 'threatintel':
+        return {
+          title: 'Threat Intelligence Enrichment',
+          subtitle: 'AbuseIPDB, VirusTotal & AlienVault external IP reputation ratings'
+        };
       case 'risk':
         return {
           title: 'AI Anomaly & Risk Insights',
-          subtitle: 'Scikit-learn Isolation Forest engine analysis & contamination rates'
+          subtitle: 'Hybrid Isolation Forest & XGBoost engine threat analysis'
         };
       default:
         return {

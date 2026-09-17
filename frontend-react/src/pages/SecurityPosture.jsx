@@ -74,8 +74,8 @@ export default function SecurityPosture({ data }) {
     { 
       id: 'ML-01', 
       category: 'AI / ML', 
-      name: 'Isolation Forest Anomaly Scoring Engine active', 
-      description: 'Deploy Isolation Forest ML models to continuously scan incoming traffic vectors.', 
+      name: 'Hybrid Threat Detection Engine active', 
+      description: 'Deploy Hybrid Isolation Forest + XGBoost models to continuously scan incoming traffic vectors.', 
       status: 'COMPLIANT', 
       ref: 'Custom Framework', 
       weight: 20,

@@ -12,6 +12,8 @@ import RiskInsights from './pages/RiskInsights';
 import SecurityPosture from './pages/SecurityPosture';
 import ThreatMonitor from './pages/ThreatMonitor';
 import TrafficAnalytics from './pages/TrafficAnalytics';
+import ThreatIntel from './pages/ThreatIntel';
+import LandingPage from './pages/LandingPage';
 import { generateInitialData, updateLiveTelemetry } from './services/mockData';
 
 let API_BASE_RAW = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000/api/security";
@@ -22,13 +24,27 @@ if (API_BASE_RAW.endsWith("/")) {
 const API_BASE = API_BASE_RAW;
 
 export default function App() {
-  const { user, loading } = useAuth();
+  const { user, login, loading } = useAuth();
+  const [viewMode, setViewMode] = useState('landing'); // 'landing' | 'login' | 'dashboard'
   const [activeTab, setActiveTab] = useState('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [backendConnected, setBackendConnected] = useState(false);
   const [dashboardData, setDashboardData] = useState(() => generateInitialData());
   const [rbacError, setRbacError] = useState('');
   const [soarEvents, setSoarEvents] = useState([]);
+
+  const handleDemoLogin = async () => {
+    if (user) {
+      setViewMode('dashboard');
+    } else {
+      const res = await login('sandbox_admin', 'demo123');
+      if (res.success) {
+        setViewMode('dashboard');
+      } else {
+        setViewMode('login');
+      }
+    }
+  };
 
   // Auto-clear RBAC errors after 4 seconds
   useEffect(() => {
@@ -393,9 +409,20 @@ export default function App() {
     );
   }
 
-  // ─── Unauthenticated: Show Login screen ──────────────────────────
-  if (!user) {
-    return <Login />;
+  // ─── Landing Page View ───────────────────────────────────────────
+  if (viewMode === 'landing') {
+    return (
+      <LandingPage
+        onLaunchDashboard={() => setViewMode(user ? 'dashboard' : 'login')}
+        onOpenLogin={() => setViewMode('login')}
+        onDemoLogin={handleDemoLogin}
+      />
+    );
+  }
+
+  // ─── Unauthenticated / Login View ────────────────────────────────
+  if (viewMode === 'login' || !user) {
+    return <Login onBackToLanding={() => setViewMode('landing')} />;
   }
 
   return (
@@ -445,6 +472,7 @@ export default function App() {
         totalThreats={dashboardData.totalThreats}
         alertsCount={dashboardData.activeThreats.length}
         socketConnected={backendConnected}
+        onOpenLanding={() => setViewMode('landing')}
       />
 
       {/* Main Content Area */}
@@ -497,6 +525,9 @@ export default function App() {
                   onResolveAlert={handleResolveAlert} 
                   onResolveAll={handleResolveAll} 
                 />
+              )}
+              {activeTab === 'threatintel' && (
+                <ThreatIntel />
               )}
               {activeTab === 'posture' && (
                 <SecurityPosture data={dashboardData} />

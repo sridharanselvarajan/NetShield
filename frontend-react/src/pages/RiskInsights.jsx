@@ -42,7 +42,7 @@ export default function RiskInsights({ data }) {
           </div>
           <div className="flex flex-col">
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active ML Model</span>
-            <span className="text-base font-black text-white mt-0.5">Isolation Forest Ensemble</span>
+            <span className="text-base font-black text-white mt-0.5">Hybrid Ensemble (IF + XGBoost)</span>
           </div>
         </GlassCard>
 

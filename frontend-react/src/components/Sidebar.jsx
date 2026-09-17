@@ -11,12 +11,13 @@ import {
   LogOut,
   User as UserIcon,
   Globe,
-  ShieldCheck
+  ShieldCheck,
+  Radar
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
-export default function Sidebar({ activeTab, setActiveTab, securityScore, totalThreats, alertsCount, socketConnected }) {
+export default function Sidebar({ activeTab, setActiveTab, securityScore, totalThreats, alertsCount, socketConnected, onOpenLanding }) {
   const { user, logout } = useAuth();
 
   const menuItems = [
@@ -25,6 +26,7 @@ export default function Sidebar({ activeTab, setActiveTab, securityScore, totalT
     { id: 'traffic', name: 'Traffic Analytics', icon: Terminal },
     { id: 'heatmap', name: 'GeographicIP Attack', icon: Globe },
     { id: 'alerts', name: 'Security Alerts', icon: ShieldAlert, count: alertsCount, countColor: 'bg-rose-500' },
+    { id: 'threatintel', name: 'Threat Intelligence', icon: Radar },
     { id: 'posture', name: 'Security Posture', icon: ShieldCheck },
     { id: 'risk', name: 'Risk Insights (AI)', icon: BrainCircuit },
     { id: 'kql', name: 'AI KQL Copilot', icon: Sparkles }
@@ -33,14 +35,18 @@ export default function Sidebar({ activeTab, setActiveTab, securityScore, totalT
   return (
     <aside className="w-[280px] bg-[rgba(10,12,22,0.85)] border-r border-[rgba(255,255,255,0.06)] backdrop-blur-md flex flex-col p-6 fixed h-screen z-50">
       {/* Brand Section */}
-      <div className="mb-6 pl-3">
+      <div 
+        className="mb-6 pl-3 cursor-pointer group"
+        onClick={onOpenLanding}
+        title="View Product Landing Page"
+      >
         <div className="flex items-center gap-4">
           <div className="relative">
             <ShieldAlert className="text-[#00ff88] w-8 h-8 drop-shadow-[0_0_12px_rgba(0,255,136,0.6)] animate-pulse" />
             <div className="absolute inset-0 bg-[#00ff88] filter blur-md opacity-25 rounded-full scale-125 animate-ping" />
           </div>
           <div className="flex flex-col">
-            <span className="text-xl font-black tracking-wide text-white">
+            <span className="text-xl font-black tracking-wide text-white group-hover:text-[#00ff88] transition-colors">
               NetShield <span className="text-[#00ff88]">AI</span>
             </span>
             <span className="text-[9px] text-[#00ff88] font-bold tracking-widest uppercase mt-0.5 opacity-80">
@@ -70,7 +76,15 @@ export default function Sidebar({ activeTab, setActiveTab, securityScore, totalT
       )}
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-2 flex-grow">
+      <style>{`
+        .sidebar-nav::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+      <nav 
+        className="flex flex-col gap-1.5 flex-grow overflow-y-auto pr-1 sidebar-nav" 
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -78,7 +92,7 @@ export default function Sidebar({ activeTab, setActiveTab, securityScore, totalT
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-4 py-3.5 px-4 rounded-xl text-[14px] font-semibold tracking-wide transition-all duration-200 relative group cursor-pointer ${
+              className={`flex items-center gap-4 py-3 px-4 rounded-xl text-[14px] font-semibold tracking-wide transition-all duration-200 relative group cursor-pointer ${
                 isActive 
                   ? 'text-white bg-[rgba(0,255,136,0.08)] border-l-4 border-[#00ff88] pl-5' 
                   : 'text-slate-400 hover:bg-[rgba(255,255,255,0.02)] hover:text-slate-200 hover:pl-5'

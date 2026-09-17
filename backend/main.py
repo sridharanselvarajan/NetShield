@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from models.database import create_tables
-from routers import security, auth
+from routers import security, auth, threat_intel
 
 load_dotenv()
 
@@ -30,9 +30,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include Auth & Security Routers
+# Include Auth, Security & Threat Intel Routers
 app.include_router(auth.router)
 app.include_router(security.router)
+app.include_router(threat_intel.router)
 
 @app.get("/")
 def read_root():

@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
 import { ShieldAlert, ShieldCheck, Check, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ThreatIntelModal from '../components/ThreatIntelModal';
 
 export default function Alerts({ data, onResolveAlert, onResolveAll }) {
+  const [selectedIpForIntel, setSelectedIpForIntel] = useState(null);
   const { activeThreats } = data;
   const [selectedAlert, setSelectedAlert] = useState(null);
 
@@ -84,7 +86,14 @@ export default function Alerts({ data, onResolveAlert, onResolveAll }) {
                     </div>
 
                     <div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-500 mt-2">
-                      <span>IP Address: <strong className="font-mono text-indigo-400">{alert.ip}</strong></span>
+                      <span>IP Address: 
+                        <button 
+                          onClick={() => setSelectedIpForIntel(alert.ip)}
+                          className="hover:text-indigo-300 hover:underline font-mono font-bold focus:outline-none cursor-pointer ml-1 text-indigo-400"
+                        >
+                          {alert.ip}
+                        </button>
+                      </span>
                       <span>Port Target: <strong className="font-mono">{alert.port}</strong></span>
                       <span>Ingest Time: <strong>{alert.time}</strong></span>
                     </div>
@@ -142,6 +151,14 @@ export default function Alerts({ data, onResolveAlert, onResolveAll }) {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Threat Intel modal overlay */}
+      {selectedIpForIntel && (
+        <ThreatIntelModal 
+          ip={selectedIpForIntel} 
+          onClose={() => setSelectedIpForIntel(null)} 
+        />
+      )}
     </div>
   );
 }

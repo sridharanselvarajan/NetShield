@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
+import ThreatIntelModal from '../components/ThreatIntelModal';
 import { 
   AreaChart, 
   Area, 
@@ -23,6 +24,7 @@ import {
 import { motion } from 'framer-motion';
 
 export default function Overview({ data, onResolveAlert }) {
+  const [selectedIpForIntel, setSelectedIpForIntel] = useState(null);
   const { 
     securityScore, 
     totalThreats, 
@@ -199,7 +201,14 @@ export default function Overview({ data, onResolveAlert }) {
               <tbody>
                 {topSuspiciousIPs.map((ipRow, idx) => (
                   <tr key={idx} className="border-b border-[rgba(255,255,255,0.03)] last:border-0 hover:bg-[rgba(255,255,255,0.015)] transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-indigo-400">{ipRow.ip}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-indigo-400">
+                      <button 
+                        onClick={() => setSelectedIpForIntel(ipRow.ip)}
+                        className="hover:text-indigo-300 hover:underline font-mono font-bold focus:outline-none cursor-pointer text-left"
+                      >
+                        {ipRow.ip}
+                      </button>
+                    </td>
                     <td className="py-3 px-3 text-slate-300 flex items-center gap-1">
                       <Globe size={12} className="text-slate-500" /> {ipRow.region}
                     </td>
@@ -220,6 +229,13 @@ export default function Overview({ data, onResolveAlert }) {
           </div>
         </GlassCard>
       </div>
+      {/* Threat Intel modal overlay */}
+      {selectedIpForIntel && (
+        <ThreatIntelModal 
+          ip={selectedIpForIntel} 
+          onClose={() => setSelectedIpForIntel(null)} 
+        />
+      )}
     </div>
   );
 }

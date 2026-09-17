@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
-export default function Login() {
+export default function Login({ onBackToLanding }) {
   const { login, register } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
@@ -204,12 +204,21 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Developer Guidelines */}
-        <div className="mt-8 border-t border-white/5 pt-4 text-center">
+        {/* Developer Guidelines & Back Link */}
+        <div className="mt-6 border-t border-white/5 pt-4 flex flex-col gap-3 text-center">
+          {onBackToLanding && (
+            <button
+              type="button"
+              onClick={onBackToLanding}
+              className="text-xs text-[#00ff88] hover:underline font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>← Back to Landing Page & Overview</span>
+            </button>
+          )}
           <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
             💡 Sandbox Testing Credentials
           </p>
-          <p className="text-[10px] text-slate-400 mt-1">
+          <p className="text-[10px] text-slate-400">
             Create any username. Password requirements: 4+ chars.
           </p>
         </div>

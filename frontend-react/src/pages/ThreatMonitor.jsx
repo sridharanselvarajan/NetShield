@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
+import ThreatIntelModal from '../components/ThreatIntelModal';
 import { 
   BarChart, 
   Bar, 
@@ -24,6 +25,7 @@ export default function ThreatMonitor({
   simulatorActive = true, 
   onToggleSimulator 
 }) {
+  const [selectedIpForIntel, setSelectedIpForIntel] = useState(null);
   const { activeThreats, threat7d } = data;
   const [filterSeverity, setFilterSeverity] = useState('ALL');
   const [isolatingThreat, setIsolatingThreat] = useState(null);
@@ -135,7 +137,12 @@ export default function ThreatMonitor({
                     </span>
                     <div className="flex flex-col">
                       <div className="flex items-center gap-3.5">
-                        <span className="text-sm font-bold text-white font-mono">{threat.ip}</span>
+                        <button 
+                          onClick={() => setSelectedIpForIntel(threat.ip)}
+                          className="text-sm font-bold text-indigo-400 hover:text-indigo-300 hover:underline font-mono focus:outline-none cursor-pointer text-left"
+                        >
+                          {threat.ip}
+                        </button>
                         <span className="text-xs font-semibold text-slate-400">{threat.type}</span>
                       </div>
                       <p className="text-[10px] text-slate-500 mt-1">Port Destination: <strong className="font-mono">{threat.port}</strong> | {threat.description}</p>
@@ -299,6 +306,14 @@ export default function ThreatMonitor({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Threat Intel modal overlay */}
+      {selectedIpForIntel && (
+        <ThreatIntelModal 
+          ip={selectedIpForIntel} 
+          onClose={() => setSelectedIpForIntel(null)} 
+        />
+      )}
     </div>
   );
 }

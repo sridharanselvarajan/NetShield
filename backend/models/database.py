@@ -93,6 +93,19 @@ class FirewallRule(Base):
     is_active  = Column(Boolean, default=True)
 
 
+# ─── Threat Intel Cache Table ──────────────────────────────────────
+class ThreatIntelCache(Base):
+    __tablename__ = "threat_intel_cache"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    ip_address         = Column(String, unique=True, index=True, nullable=False)
+    abuse_score        = Column(Float, default=0.0)
+    vt_score           = Column(Float, default=0.0)
+    otx_score          = Column(Float, default=0.0)
+    reputation_rating  = Column(Float, default=0.0)
+    cached_at          = Column(DateTime, default=datetime.utcnow)
+
+
 # ─── Create All Tables ────────────────────────────────────────────
 def create_tables():
     Base.metadata.create_all(bind=engine)
